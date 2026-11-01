@@ -21,17 +21,22 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import androidx.documentfile.provider.DocumentFile
 import kotlin.math.abs
 
+/**
+ * Dono das janelas flutuantes: bolinha com o N, menu quadrado, moldura do chat e aviso de fechar.
+ * O desenho do menu fica em FloatingMenu.kt.
+ */
 class FloatingService : Service() {
 
     companion object {
         @Volatile
         var running = false
         private const val TYPE = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        private val SIZES = floatArrayOf(0.8f, 1f, 1.2f, 1.4f)
+        private const val NOT_FOCUSABLE = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        private const val NO_LIMITS = WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
     }
 
     private lateinit var wm: WindowManager
@@ -40,20 +45,32 @@ class FloatingService : Service() {
 
     private var bubble: ImageView? = null
     private var bubbleLp: WindowManager.LayoutParams? = null
-    private var panel: FrameLayout? = null
-    private var panelLp: WindowManager.LayoutParams? = null
-    private var statusTv: TextView? = null
-    private var eyeBtn: TextView? = null
+    private var menu: FloatingMenu? = null
+    private var menuLp: WindowManager.LayoutParams? = null
+    private var menuX = -1
+    private var menuY = -1
     private var hl: HighlightView? = null
     private var confirm: View? = null
-    private var settingsOpen = false
-    private var textsOpen = false
+    private var ticking = false
 
+    /** Só roda enquanto o menu ou a moldura estiverem na tela. */
     private val tick = object : Runnable {
         override fun run() {
             refresh()
-            handler.postDelayed(this, 500)
+            if (menu != null || hl != null) handler.postDelayed(this, 500) else ticking = false
         }
+    }
+
+    private val actions = object : FloatingMenu.Actions {
+        override fun minimize() = closePanel()
+        override fun toggleChat() = toggleHighlight()
+        override fun cycleSize() {
+            val next = SIZES.firstOrNull { it > scale + 0.01f } ?: SIZES.first()
+            setScale(next)
+        }
+        override fun close() = showConfirm()
+        override fun loadTexts() = fillTexts()
+        override fun sendText(uri: Uri) = sendFile(uri)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -69,7 +86,6 @@ class FloatingService : Service() {
         scale = Store.scale(this)
         addBubble()
         running = true
-        handler.postDelayed(tick, 500)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
@@ -80,7 +96,7 @@ class FloatingService : Service() {
         if (::wm.isInitialized) {
             safeRemove(confirm); confirm = null
             safeRemove(hl); hl = null
-            safeRemove(panel); panel = null
+            safeRemove(menu?.view); menu = null
             safeRemove(bubble); bubble = null
         }
         super.onDestroy()
@@ -106,10 +122,16 @@ class FloatingService : Service() {
         }
     }
 
-    private fun overlayLp(w: Int, h: Int, flags: Int): WindowManager.LayoutParams =
+    private fun overlayLp(w: Int, h: Int, flags: Int) =
         WindowManager.LayoutParams(w, h, TYPE, flags, PixelFormat.TRANSLUCENT)
 
-    // ---------------------------------------------------------------- bolha com o N
+    private fun ensureTick() {
+        if (ticking) return
+        ticking = true
+        handler.post(tick)
+    }
+
+    // ---------------------------------------------------------------- bolinha com o N
 
     private fun addBubble() {
         val size = dp(58f * scale)
@@ -119,7 +141,7 @@ class FloatingService : Service() {
         iv.setPadding(dp(7), dp(7), dp(7), dp(7))
         iv.background = rounded(Color.argb(230, 5, 5, 6), size / 2f, dp(2), C.RED)
         iv.clipRound(size / 2f)
-        val lp = overlayLp(size, size, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        val lp = overlayLp(size, size, NOT_FOCUSABLE or NO_LIMITS)
         lp.gravity = Gravity.TOP or Gravity.START
         lp.x = dp(8)
         lp.y = dp(180)
@@ -170,155 +192,44 @@ class FloatingService : Service() {
         wm.updateViewLayout(b, lp)
     }
 
-    // ---------------------------------------------------------------- painel
+    // ---------------------------------------------------------------- menu quadrado
 
     private fun togglePanel() {
-        if (panel == null) openPanel() else closePanel()
+        if (menu == null) openPanel() else closePanel()
     }
 
     private fun openPanel() {
-        val p = buildPanel()
-        val screenW = resources.displayMetrics.widthPixels
-        val w = minOf(dp(300f * scale), screenW - dp(16))
-        val lp = overlayLp(w, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        val m = FloatingMenu(this, scale, actions)
+        val dm = resources.displayMetrics
+        val lp = overlayLp(m.side, m.side, NOT_FOCUSABLE or NO_LIMITS)
         lp.gravity = Gravity.TOP or Gravity.START
-        lp.x = (screenW - w) / 2
-        lp.y = dp(80)
-        p.alpha = 0f
-        p.scaleX = 0.92f
-        p.scaleY = 0.92f
-        wm.addView(p, lp)
-        p.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200).start()
-        panel = p
-        panelLp = lp
-        if (textsOpen) { /* a lista é preenchida na construção */ }
+        lp.x = if (menuX < 0) (dm.widthPixels - m.side) / 2 else menuX
+        lp.y = if (menuY < 0) dp(120) else menuY
+        lp.x = lp.x.coerceIn(0, (dm.widthPixels - m.side).coerceAtLeast(0))
+        lp.y = lp.y.coerceIn(0, (dm.heightPixels - m.side).coerceAtLeast(0))
+        m.handle.setOnTouchListener(dragPanel())
+        m.setChat(hl != null)
+        m.view.alpha = 0f
+        m.view.scaleX = 0.92f
+        m.view.scaleY = 0.92f
+        wm.addView(m.view, lp)
+        m.view.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200).start()
+        menu = m
+        menuLp = lp
         refresh()
+        ensureTick()
     }
 
     private fun closePanel() {
-        val p = panel ?: return
-        panel = null
-        statusTv = null
-        p.animate().alpha(0f).scaleX(0.92f).scaleY(0.92f).setDuration(150).withEndAction { safeRemove(p) }.start()
+        val m = menu ?: return
+        menu = null
+        m.view.animate().alpha(0f).scaleX(0.92f).scaleY(0.92f).setDuration(150)
+            .withEndAction { safeRemove(m.view) }.start()
     }
 
     private fun closePanelNow() {
-        safeRemove(panel)
-        panel = null
-        statusTv = null
-    }
-
-    private fun buildPanel(): FrameLayout {
-        val s = scale
-        val rootFl = FrameLayout(this)
-        val rad = dp(22f).toFloat()
-        rootFl.setPadding(dp(1), dp(1), dp(1), dp(1))
-        rootFl.background = rounded(C.BLACK, rad, dp(1), C.RED_DEEP)
-        rootFl.clipRound(rad)
-        rootFl.addView(NetworkView(this, 26), FrameLayout.LayoutParams(-1, -1))
-
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.gravity = Gravity.CENTER_HORIZONTAL
-        col.setPadding(dp(14f * s), dp(14f * s), dp(14f * s), dp(10f * s))
-        rootFl.addView(col, FrameLayout.LayoutParams(-1, -2))
-
-        // título (também serve de alça para arrastar o painel)
-        val title = label("NEXUS IA", 26f * s, Color.WHITE, true)
-        title.gravity = Gravity.CENTER
-        title.letterSpacing = 0.08f
-        title.setShadowLayer(dp(10f).toFloat(), 0f, 0f, C.RED)
-        title.setOnTouchListener(dragPanel())
-        col.addView(title, LinearLayout.LayoutParams(-1, -2))
-
-        val sub = label("o melhor nexus jailbreak para IA", 10f * s, Color.WHITE, true)
-        sub.gravity = Gravity.CENTER
-        sub.rainbow()
-        col.addView(sub, LinearLayout.LayoutParams(-1, -2))
-
-        val st = label("Abra uma IA para começar", 12f * s, C.DIM, false)
-        st.gravity = Gravity.CENTER
-        statusTv = st
-        col.addView(st, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8f * s) })
-
-        // botões principais
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        val eye = nexusButton(if (hl == null) "Mostrar chat" else "Ocultar chat", R.drawable.ic_eye, 12f * s) { toggleHighlight() }
-        eyeBtn = eye
-        val textsBox = LinearLayout(this)
-        textsBox.orientation = LinearLayout.VERTICAL
-        val sv = ScrollView(this)
-        sv.isVerticalScrollBarEnabled = false
-        sv.addView(textsBox, LinearLayout.LayoutParams(-1, -2))
-        val svBox = LinearLayout(this)
-        svBox.addView(sv, LinearLayout.LayoutParams(-1, dp(150f * s)))
-        svBox.visibility = if (textsOpen) View.VISIBLE else View.GONE
-        val send = nexusButton("Enviar texto", R.drawable.ic_send, 12f * s) {
-            textsOpen = !textsOpen
-            if (textsOpen) {
-                svBox.visibility = View.VISIBLE
-                fillTexts(textsBox)
-            } else {
-                svBox.visibility = View.GONE
-            }
-        }
-        row.addView(eye, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
-        row.addView(send, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
-        col.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10f * s) })
-
-        // lista de textos da pasta
-        col.addView(svBox, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8f * s) })
-        if (textsOpen) fillTexts(textsBox)
-
-        // linha de ajustes (escondida)
-        val settingsRow = LinearLayout(this)
-        settingsRow.orientation = LinearLayout.HORIZONTAL
-        settingsRow.gravity = Gravity.CENTER_VERTICAL
-        settingsRow.visibility = if (settingsOpen) View.VISIBLE else View.GONE
-        val minus = iconBtn(R.drawable.ic_minus, 34f * s) { setScale(scale - 0.1f) }
-        val pct = label("${(scale * 100).toInt()}%", 13f * s, C.SILVER, true)
-        pct.gravity = Gravity.CENTER
-        val plus = iconBtn(R.drawable.ic_plus, 34f * s) { setScale(scale + 0.1f) }
-        val close = nexusButton("Fechar", R.drawable.ic_power, 11f * s, true) { showConfirm() }
-        settingsRow.addView(minus, LinearLayout.LayoutParams(dp(34f * s), dp(34f * s)))
-        settingsRow.addView(pct, LinearLayout.LayoutParams(dp(48f * s), -2))
-        settingsRow.addView(plus, LinearLayout.LayoutParams(dp(34f * s), dp(34f * s)))
-        settingsRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        settingsRow.addView(close, LinearLayout.LayoutParams(-2, -2))
-
-        // engrenagem pequena embaixo
-        val bottom = LinearLayout(this)
-        bottom.orientation = LinearLayout.HORIZONTAL
-        bottom.gravity = Gravity.CENTER_VERTICAL
-        val gear = ImageView(this)
-        gear.setImageResource(R.drawable.ic_settings)
-        gear.setColorFilter(C.DIM)
-        gear.setPadding(dp(5), dp(5), dp(5), dp(5))
-        gear.setOnClickListener {
-            settingsOpen = !settingsOpen
-            settingsRow.visibility = if (settingsOpen) View.VISIBLE else View.GONE
-            gear.setColorFilter(if (settingsOpen) C.RED else C.DIM)
-        }
-        gear.pressable()
-        gear.setColorFilter(if (settingsOpen) C.RED else C.DIM)
-        bottom.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        bottom.addView(gear, LinearLayout.LayoutParams(dp(30f * s), dp(30f * s)))
-        col.addView(bottom, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f * s) })
-        col.addView(settingsRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2f * s) })
-        return rootFl
-    }
-
-    private fun iconBtn(icon: Int, sizeDp: Float, onClick: () -> Unit): ImageView {
-        val b = ImageView(this)
-        b.setImageResource(icon)
-        b.setColorFilter(Color.WHITE)
-        val pd = dp(sizeDp * 0.25f)
-        b.setPadding(pd, pd, pd, pd)
-        b.background = redGradient(dp(10f).toFloat())
-        b.setOnClickListener { onClick() }
-        b.pressable()
-        return b
+        safeRemove(menu?.view)
+        menu = null
     }
 
     private fun dragPanel(): View.OnTouchListener = object : View.OnTouchListener {
@@ -327,14 +238,17 @@ class FloatingService : Service() {
         var ox = 0
         var oy = 0
         override fun onTouch(v: View, e: MotionEvent): Boolean {
-            val lp = panelLp ?: return false
-            val p = panel ?: return false
+            val lp = menuLp ?: return false
+            val m = menu ?: return false
+            val dm = resources.displayMetrics
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y }
                 MotionEvent.ACTION_MOVE -> {
-                    lp.x = (ox + e.rawX - sx).toInt()
-                    lp.y = (oy + e.rawY - sy).toInt()
-                    wm.updateViewLayout(p, lp)
+                    lp.x = (ox + e.rawX - sx).toInt().coerceIn(0, (dm.widthPixels - m.side).coerceAtLeast(0))
+                    lp.y = (oy + e.rawY - sy).toInt().coerceIn(0, (dm.heightPixels - m.side).coerceAtLeast(0))
+                    menuX = lp.x
+                    menuY = lp.y
+                    wm.updateViewLayout(m.view, lp)
                 }
             }
             return true
@@ -344,54 +258,53 @@ class FloatingService : Service() {
     private fun setScale(v: Float) {
         scale = v.coerceIn(0.7f, 1.5f)
         Store.setScale(this, scale)
-        val wasOpen = panel != null
+        val wasOpen = menu != null
         closePanelNow()
         resizeBubble()
         if (wasOpen) openPanel()
     }
 
-    // ---------------------------------------------------------------- overlay do chat
+    // ---------------------------------------------------------------- moldura do chat
 
     private fun toggleHighlight() {
         if (hl == null) {
             val v = HighlightView(this)
             val lp = overlayLp(
                 -1, -1,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or NO_LIMITS
             )
             wm.addView(v, lp)
             hl = v
-            eyeBtn?.text = "OCULTAR CHAT"
             if (NexusAccessibilityService.instance == null) toast("Ative a acessibilidade do NEXUS IA no app")
         } else {
             safeRemove(hl)
             hl = null
-            eyeBtn?.text = "MOSTRAR CHAT"
         }
+        menu?.setChat(hl != null)
+        refresh()
+        ensureTick()
     }
 
     private fun refresh() {
-        if (panel == null && hl == null) return
+        if (menu == null && hl == null) return
         val svc = NexusAccessibilityService.instance
-        val name = AiDetector.nameOf(svc?.lastAiPkg)
-        statusTv?.text = when {
-            svc == null -> "Ative a acessibilidade no app"
-            name != null -> "IA atual: $name"
-            else -> "Abra uma IA para começar"
+        svc?.scan()
+        val ai = svc?.currentAi()
+        menu?.setStatus(ai, svc != null, svc?.currentWeb == true)
+        hl?.let {
+            it.label = if (ai != null) "CHAT · " + ai.name.uppercase() else "CHAT DA IA"
+            it.target = svc?.findInputBounds()
         }
-        if (hl != null) hl?.target = svc?.findInputBounds()
     }
 
     // ---------------------------------------------------------------- textos da pasta
 
-    private fun fillTexts(list: LinearLayout) {
-        list.removeAllViews()
-        list.addView(label("Carregando...", 12f * scale, C.DIM, false))
-        val pkg = NexusAccessibilityService.instance?.lastAiPkg
+    private fun fillTexts() {
+        val ai = NexusAccessibilityService.instance?.currentAi()
         Thread {
             val items = ArrayList<Pair<String, Uri>>()
-            for (k in listOfNotNull(pkg, "geral")) {
+            for (k in listOfNotNull(ai?.id, "geral")) {
                 val s = Store.dir(this, k) ?: continue
                 val tree = (try {
                     DocumentFile.fromTreeUri(this, Uri.parse(s))
@@ -404,18 +317,8 @@ class FloatingService : Service() {
                 }
             }
             handler.post {
-                list.removeAllViews()
-                if (items.isEmpty()) {
-                    list.addView(label("Nenhum .txt para esta IA. O ADM escolhe a pasta dentro do app.", 12f * scale, C.DIM, false))
-                }
-                for ((n, u) in items) {
-                    val r = label(n.removeSuffix(".txt").removeSuffix(".TXT"), 13f * scale, C.SILVER, true)
-                    r.setPadding(dp(12), dp(9), dp(12), dp(9))
-                    r.background = rounded(Color.argb(200, 14, 11, 12), dp(10f).toFloat(), dp(1), C.LINE)
-                    r.setOnClickListener { sendFile(u) }
-                    r.pressable()
-                    list.addView(r, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
-                }
+                val m = menu
+                if (m != null && m.onTextsPage) m.showTexts(items)
             }
         }.start()
     }
@@ -480,7 +383,7 @@ class FloatingService : Service() {
         dim.addView(card, FrameLayout.LayoutParams(dp(290), -2, Gravity.CENTER))
         wm.addView(
             dim,
-            overlayLp(-1, -1, WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            overlayLp(-1, -1, WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or NO_LIMITS)
         )
         confirm = dim
         dim.alpha = 0f

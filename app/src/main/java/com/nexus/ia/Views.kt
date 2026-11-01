@@ -113,7 +113,8 @@ class HighlightView(ctx: Context) : View(ctx) {
     private val rf = RectF()
     private val cr = RectF()
     private val radius = ctx.dp(14).toFloat()
-    private val label = "CHAT DA IA"
+    /** Texto da etiqueta em cima da moldura (muda com a IA detectada). */
+    var label = "CHAT DA IA"
 
     override fun onDraw(c: Canvas) {
         val t = target ?: return

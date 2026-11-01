@@ -1,79 +1,7 @@
 package com.nexus.ia
 
 import android.content.Context
-import android.content.pm.PackageManager
-import android.provider.Settings
-import rikka.shizuku.Shizuku
 import java.security.MessageDigest
-
-data class Ai(val pkg: String, val name: String)
-
-object AiDetector {
-    val KNOWN = listOf(
-        Ai("com.openai.chatgpt", "ChatGPT"),
-        Ai("com.google.android.apps.bard", "Gemini"),
-        Ai("com.anthropic.claude", "Claude"),
-        Ai("com.microsoft.copilot", "Copilot"),
-        Ai("com.deepseek.chat", "DeepSeek"),
-        Ai("ai.x.grok", "Grok"),
-        Ai("ai.perplexity.app.android", "Perplexity"),
-        Ai("com.poe.android", "Poe"),
-        Ai("ai.mistral.chat", "Le Chat (Mistral)"),
-        Ai("ai.character.app", "Character.AI"),
-        Ai("com.moonshot.kimichat", "Kimi"),
-        Ai("com.larus.nova", "Doubao")
-    )
-
-    fun installed(ctx: Context): List<Ai> {
-        val pm = ctx.packageManager
-        return KNOWN.filter {
-            try {
-                pm.getPackageInfo(it.pkg, 0)
-                true
-            } catch (e: Exception) {
-                false
-            }
-        }
-    }
-
-    fun nameOf(pkg: String?): String? = KNOWN.firstOrNull { it.pkg == pkg }?.name
-}
-
-object Perms {
-    const val TERMUX = "com.termux.permission.RUN_COMMAND"
-
-    fun shizukuRunning(): Boolean = try {
-        Shizuku.pingBinder()
-    } catch (t: Throwable) {
-        false
-    }
-
-    fun shizukuGranted(): Boolean = try {
-        Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-    } catch (t: Throwable) {
-        false
-    }
-
-    fun termuxInstalled(ctx: Context): Boolean = try {
-        ctx.packageManager.getPackageInfo("com.termux", 0)
-        true
-    } catch (e: Exception) {
-        false
-    }
-
-    fun termuxGranted(ctx: Context): Boolean =
-        ctx.checkSelfPermission(TERMUX) == PackageManager.PERMISSION_GRANTED
-
-    fun unlocked(ctx: Context): Boolean = shizukuGranted() || termuxGranted(ctx)
-
-    fun overlay(ctx: Context): Boolean = Settings.canDrawOverlays(ctx)
-
-    fun accessibility(ctx: Context): Boolean {
-        val s = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            ?: return false
-        return s.split(':').any { it.startsWith(ctx.packageName + "/") }
-    }
-}
 
 object Store {
     private const val ADMIN_NAME = "NEXUS"
@@ -126,4 +54,13 @@ object Store {
 
     fun flag(c: Context, k: String): Boolean = p(c).getBoolean(k, false)
     fun setFlag(c: Context, k: String, v: Boolean) { p(c).edit().putBoolean(k, v).apply() }
+
+    /** Pastas antigas eram guardadas pelo pacote do app; agora cada IA tem um id próprio. */
+    fun migrate(c: Context) {
+        for (ai in AiDetector.KNOWN) {
+            if (dir(c, ai.id) != null) continue
+            val old = ai.pkgs.firstNotNullOfOrNull { dir(c, it) } ?: continue
+            setDir(c, ai.id, old)
+        }
+    }
 }

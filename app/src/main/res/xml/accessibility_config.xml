@@ -3,7 +3,7 @@
     android:description="@string/acc_desc"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault"
+    android:accessibilityFlags="flagDefault|flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:notificationTimeout="200"
-    android:packageNames="com.openai.chatgpt,com.google.android.apps.bard,com.anthropic.claude,com.microsoft.copilot,com.deepseek.chat,ai.x.grok,ai.perplexity.app.android,com.poe.android,ai.mistral.chat,ai.character.app,com.moonshot.kimichat,com.larus.nova" />
+    android:packageNames="com.openai.chatgpt,com.google.android.apps.bard,com.anthropic.claude,com.microsoft.copilot,com.deepseek.chat,ai.x.grok,ai.perplexity.app.android,com.poe.android,ai.mistral.chat,ai.character.app,com.moonshot.kimichat,com.larus.nova,com.android.chrome,com.sec.android.app.sbrowser,org.mozilla.firefox,com.brave.browser,com.microsoft.emmx,com.opera.browser,com.kiwibrowser.browser,com.duckduckgo.mobile.android" />

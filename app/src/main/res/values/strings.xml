@@ -1,4 +1,4 @@
 <resources>
 <string name="app_name">NEXUS IA</string>
-<string name="acc_desc">Permite ao NEXUS IA localizar o campo de chat das IAs e preencher o texto escolhido por você.</string>
+<string name="acc_desc">Permite ao NEXUS IA descobrir qual IA está aberta (app ou site), localizar o campo de chat e preencher o texto escolhido por você. Só lê apps de IA e a barra de endereço dos navegadores.</string>
 </resources>

@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Store.migrate(this)
         root = FrameLayout(this)
         root.setBackgroundColor(C.BLACK)
         setContentView(root)
@@ -266,6 +267,13 @@ class MainActivity : ComponentActivity() {
                 perm.addView(nexusButton("Ativar acessibilidade", R.drawable.ic_settings, 12f) {
                     startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }, lp(top = 8))
+                perm.addView(
+                    label("Se o NEXUS IA aparecer cinza e não ligar: Info do app → ⋮ → Permitir configurações restritas.", 11f, C.DIM, false),
+                    lp(top = 8)
+                )
+                perm.addView(nexusButton("Info do app", R.drawable.ic_shield, 11f, true) {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                }, lp(top = 6))
             }
         }
         col.addView(perm, lp(bottom = 12))
@@ -275,11 +283,12 @@ class MainActivity : ComponentActivity() {
         ais.addView(section("IAS NO SEU CELULAR"))
         val found = AiDetector.installed(this)
         if (found.isEmpty()) {
-            ais.addView(label("Nenhuma IA conhecida encontrada.", 14f, C.DIM, false), lp(top = 8))
+            ais.addView(label("Nenhum app de IA encontrado. Os sites de IA no navegador também são detectados.", 13f, C.DIM, false), lp(top = 8))
         } else {
             for (a in found) {
                 ais.addView(label("● " + a.name, 16f, C.SILVER, true), lp(top = 8))
             }
+            ais.addView(label("Sites de IA abertos no navegador também são detectados.", 11f, C.DIM, false), lp(top = 10))
         }
         col.addView(ais, lp(bottom = 12))
 
@@ -326,7 +335,8 @@ class MainActivity : ComponentActivity() {
 
         val keys = ArrayList<Pair<String, String>>()
         keys.add(Pair("geral", "Geral (todas as IAs)"))
-        for (a in AiDetector.installed(this)) keys.add(Pair(a.pkg, a.name))
+        val inst = AiDetector.installed(this).map { it.id }.toSet()
+        for (a in AiDetector.KNOWN) keys.add(Pair(a.id, a.name + if (a.id in inst) " · app" else " · site"))
 
         for ((key, nm) in keys) {
             val c = card()

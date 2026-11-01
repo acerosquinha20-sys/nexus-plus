@@ -10,15 +10,27 @@ App Android em Kotlin com login, detecção de IAs instaladas, permissão Shizuk
 ## Como usar no celular
 1. Entre com nome e senha (o ADM tem acesso às pastas por IA).
 2. Conceda **Shizuku** ou **Termux**. Ao liberar uma delas, o app pede a **sobreposição de tela** e a **acessibilidade**.
-3. Com tudo liberado, a bolinha com o **N** aparece. Toque nela para abrir o painel, arraste pelo título para mover.
-4. **Mostrar chat** desenha uma moldura vermelha no campo de texto da IA aberta.
-5. **Enviar texto** lista os `.txt` da pasta da IA atual (e da pasta "Geral") e preenche o chat.
-6. A engrenagem pequena embaixo aumenta, diminui ou fecha a interface (com confirmação Sim/Não).
+3. Com tudo liberado, a bolinha com o **N** aparece. Toque nela para abrir o menu quadrado; arraste pela barra de cima (N + título) para mover. O **−** minimiza.
+4. O menu mostra a **IA detectada** (app ou site) e tem 4 botões:
+   - **CHAT**: liga/desliga a moldura vermelha no campo de texto da IA aberta (a etiqueta mostra o nome da IA).
+   - **TEXTOS**: lista os `.txt` da pasta da IA atual (e da pasta "Geral") e preenche o chat. `‹` volta.
+   - **TAMANHO**: alterna 80% / 100% / 120% / 140%.
+   - **FECHAR**: encerra a interface (com confirmação Sim/Não).
+
+Se a acessibilidade aparecer cinza e não ligar (Android 13+, app instalado por APK): Info do app → ⋮ → **Permitir configurações restritas**.
 
 ## Pastas por IA (ADM)
 No login ADM, **Pastas por IA** deixa escolher uma pasta com arquivos `.txt` para cada IA detectada e uma pasta "Geral".
 Você escreve os seus próprios textos nessas pastas; o app só envia o que estiver nelas.
 
 ## IAs reconhecidas
-ChatGPT, Gemini, Claude, Copilot, DeepSeek, Grok, Perplexity, Poe, Le Chat, Character.AI, Kimi e Doubao.
-Para incluir outra, adicione o pacote em `Core.kt` (AiDetector), em `AndroidManifest.xml` (queries) e em `res/xml/accessibility_config.xml`.
+ChatGPT, Gemini, Claude, Copilot, DeepSeek, Grok, Perplexity, Poe, Le Chat, Character.AI, Kimi e Doubao (apps),
+mais Qwen, Meta AI, Z.ai e HuggingChat (só pelo site). Os sites também são detectados no Chrome, Samsung Internet, Firefox, Brave, Edge, Opera, Kiwi e DuckDuckGo
+(o NEXUS lê só a barra de endereço desses navegadores).
+
+Para incluir outra IA, adicione uma linha em `Ai.kt` (`AiDetector.KNOWN`, com pacote e/ou domínio). Se ela tiver app, repita o pacote em `AndroidManifest.xml` (queries) e em `res/xml/accessibility_config.xml`.
+
+## Organização do código
+- `Ai.kt` lista de IAs e detecção · `Perms.kt` permissões · `Store.kt` login e preferências
+- `FloatingService.kt` janelas flutuantes · `FloatingMenu.kt` menu quadrado · `NexusAccessibilityService.kt` leitura do chat
+- `MainActivity.kt` telas do app · `Ui.kt` / `Views.kt` estilos e views
