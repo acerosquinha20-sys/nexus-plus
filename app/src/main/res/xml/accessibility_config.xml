@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/acc_desc"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="200"
+    android:packageNames="com.openai.chatgpt,com.google.android.apps.bard,com.anthropic.claude,com.microsoft.copilot,com.deepseek.chat,ai.x.grok,ai.perplexity.app.android,com.poe.android,ai.mistral.chat,ai.character.app,com.moonshot.kimichat,com.larus.nova" />
