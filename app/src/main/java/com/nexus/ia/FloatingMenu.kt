@@ -14,17 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-/**
- * Menu flutuante pequeno e quadrado, estilo mod menu.
- * Esta classe só monta as views; quem controla janela, arrasto e ações é o FloatingService.
- *
- *  ┌─────────────────┐
- *  │ N  NEXUS IA   − │  <- alça (arraste por aqui)
- *  │ ● ChatGPT       │  <- IA detectada
- *  │ [CHAT] [TEXTOS] │
- *  │ [TAM.] [FECHAR] │
- *  └─────────────────┘
- */
+// Menu flutuante quadrado estilo mod menu. O FloatingService controla janela, arrasto e acoes.
 class FloatingMenu(private val ctx: Context, private val scale: Float, private val act: Actions) {
 
     interface Actions {
